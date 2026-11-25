@@ -6,27 +6,74 @@
 (() => {
   const track = document.getElementById('project-cards');
   const controls = document.querySelector('.work-controls');
-  const previous = controls.querySelector('[data-scroll="-1"]');
-  const next = controls.querySelector('[data-scroll="1"]');
+  const cards = Array.from(track.children);
+  if (cards.length < 2) return;
+  let cycleWidth = 0;
+  let settleTimer;
+  let resizing = false;
+
+  function copyCards() {
+    return cards.map(card => {
+      const copy = card.cloneNode(true);
+      copy.removeAttribute('id');
+      copy.querySelectorAll('[id]').forEach(element => element.removeAttribute('id'));
+      copy.setAttribute('aria-hidden', 'true');
+      copy.querySelectorAll('a, button, [tabindex]').forEach(element => {
+        element.setAttribute('tabindex', '-1');
+      });
+      return copy;
+    });
+  }
+  const before = copyCards();
+  const after = copyCards();
+  track.prepend(...before);
+  track.append(...after);
   controls.hidden = false;
-  function update() {
-    previous.disabled = track.scrollLeft < 2;
-    next.disabled = track.scrollLeft + track.clientWidth >= track.scrollWidth - 2;
+
+  function jump(left) {
+    track.style.scrollSnapType = 'none';
+    track.scrollTo({left, behavior: 'instant'});
+    requestAnimationFrame(() => { track.style.scrollSnapType = ''; });
+  }
+  function normalize() {
+    if (!cycleWidth || resizing) return;
+    const left = track.scrollLeft;
+    if (left < cycleWidth || left >= cycleWidth * 2) {
+      jump(cycleWidth + ((left % cycleWidth) + cycleWidth) % cycleWidth);
+    }
+  }
+  function move(direction) {
+    clearTimeout(settleTimer);
+    normalize();
+    const distance = cards[1].offsetLeft - cards[0].offsetLeft;
+    track.scrollBy({
+      left: direction * distance,
+      behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'
+    });
   }
   controls.addEventListener('click', event => {
     const button = event.target.closest('button');
-    if (!button) return;
-    const card = track.querySelector('.card');
-    const distance = card.getBoundingClientRect().width + 20;
-    track.scrollBy({left: Number(button.dataset.scroll) * distance, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth'});
+    if (button) move(Number(button.dataset.scroll));
   });
   track.addEventListener('keydown', event => {
     if (event.target !== track || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
     event.preventDefault();
-    controls.querySelector(event.key === 'ArrowLeft' ? '[data-scroll="-1"]' : '[data-scroll="1"]').click();
+    move(event.key === 'ArrowLeft' ? -1 : 1);
   });
-  track.addEventListener('scroll', update, {passive:true});
-  new ResizeObserver(update).observe(track);
-  update();
+  track.addEventListener('scroll', () => {
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(normalize, 160);
+  }, {passive:true});
+  track.addEventListener('scrollend', normalize);
+
+  new ResizeObserver(() => {
+    const oldWidth = cycleWidth;
+    const position = oldWidth ? ((track.scrollLeft % oldWidth) + oldWidth) % oldWidth / oldWidth : 0;
+    cycleWidth = after[0].offsetLeft - cards[0].offsetLeft;
+    if (!cycleWidth || cycleWidth === oldWidth) return;
+    resizing = true;
+    jump(cycleWidth * (1 + position));
+    requestAnimationFrame(() => { resizing = false; });
+  }).observe(track);
 })();
 </script></body></html>
